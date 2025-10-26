@@ -1,69 +1,117 @@
+from pathlib import Path
 import json
+from typing import List, Dict, Any
 
-file_path = 'new.json'
+FILE_PATH = Path("test.json")
+OUTPUT_PATH = Path("proccess_users.json")
 
-def open_file():
-    """Carga los datos desde un archivo JSON."""
+
+def load_json_data(file_path: Path) -> List[Dict[str, Any]] | None:
+    """Carga datos desde un archivo JSON.
+
+    Args:
+        file_path: Ruta al archivo JSON.
+
+    Returns:
+        Lista de documentos o None si hay un error.
+    """
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
+        with file_path.open("r", encoding="utf-8") as file:
             data = json.load(file)
-        print(f"✅ Archivo JSON cargado con éxito. Se encontraron {len(data)} registros.")
+        print(f"✅ Cargado: {len(data)} registros")
         return data
     except FileNotFoundError:
-        print(f"❌ Error: El archivo '{file_path}' no fue encontrado.")
+        print(f"❌ Error: No se encontró '{file_path}'")
         return None
     except json.JSONDecodeError:
-        print(f"❌ Error: El archivo '{file_path}' no contiene un JSON válido.")
+        print(f"❌ Error: '{file_path}' no es un JSON válido")
         return None
 
-def find_users_with_phone():
+
+def process_users_with_phone(data: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
+    """Procesa documentos con teléfono, actualizando nombres y rangos de edad.
+
+    Args:
+        data: Lista de documentos JSON.
+
+    Returns:
+        Tupla con lista de documentos con teléfono (modificados si name u over18 lo requieren) y lista de rangos válidos asignados.
     """
-    Procesa todos los documentos, identifica aquellos sin el campo 'phone' 
-    y los guarda en una lista.
+    users_with_phone = []
+    valid_ranges_assigned = []
+
+    for doc in data or []:
+        if doc.get("phone") is not None:
+            # Copiar documento para no modificar el original
+            modified_doc = doc.copy()
+            # Cambiar name a 'No nombre' si es un string vacío
+            if modified_doc.get("name") == "":
+                modified_doc["name"] = "No nombre"
+            # Procesar over18
+            over18 = modified_doc.get("over18")
+            age_range = None
+            if over18 == "Yes":
+                age_range = "55+"
+            elif over18 is not None:
+                try:
+                    age = int(over18)
+                    if 17 < age < 26:
+                        age_range = "18-25"
+                    elif 25 < age < 36:
+                        age_range = "26-35"
+                    elif 35 < age < 46:
+                        age_range = "36-45"
+                    elif 45 < age < 56:
+                        age_range = "46-55"
+                    elif age >= 56 and age < 99:
+                        age_range = "55+"
+                except (ValueError, TypeError):
+                    # No asignar si no es numérico ni "Yes"
+                    pass
+
+            if age_range:
+                modified_doc["ageRange"] = age_range
+                print(f"AgeRange asignado: {age_range}")
+                valid_ranges_assigned.append(age_range)
+            # Eliminar over18 (opcional)
+            modified_doc.pop("over18", None)
+            users_with_phone.append(modified_doc)  # Añadir solo una vez
+
+    return users_with_phone, valid_ranges_assigned
+
+
+def save_results(users_with_phone: List[Dict[str, Any]], output_path: Path) -> None:
+    """Guarda los documentos con teléfono en un archivo JSON.
+
+    Args:
+        users_with_phone: Lista de documentos con teléfono.
+        output_path: Ruta del archivo de salida.
     """
-    all_documents = open_file()
-    
-    # 1. Inicializar la lista (arreglo) para guardar los documentos sin nombre
-    new_id = []
-    
-    if all_documents:
-        for document in all_documents:
-            # Intentar obtener el nombre. Si no existe, .get() devuelve None.
-            phone = document.get('phone')
-
-            # 2. Comprobar la condición
-            if phone is None:
-                print('Empty User')
-                # 3. Si no tiene nombre, añadir el documento COMPLETO a la lista
-            else:
-                new_id.append(document)
-
-            
-            # Opcional: También puedes imprimir un seguimiento mientras procesas
-                # oid = document.get('_id', {}).get('$oid', 'ID no disponible')
-                # print(f"Procesando ID: {oid}")
-
-    print("-" * 50)
-    print(f"Proceso finalizado.")
-    print(f"Total de usuarios con datos: {len(new_id)}")
-    print("-" * 50)
-    
-    # Devolver la lista con los documentos filtrados
-    return new_id
+    with output_path.open("w", encoding="utf-8") as outfile:
+        json.dump(users_with_phone, outfile, ensure_ascii=False, indent=4)
+    print(f"✅ Guardado: {len(users_with_phone)} documentos en '{output_path}'")
 
 
-# # --- Ejecutar el script ---
+def main():
+    """Procesa el archivo JSON y guarda documentos con teléfono."""
+    data = load_json_data(FILE_PATH)
+    if not data:
+        return
+
+    users_with_phone, valid_ranges_assigned = process_users_with_phone(data)
+
+    print(f"📱 Documentos con teléfono: {len(users_with_phone)}")
+    print(f"🎯 Rangos válidos asignados: {valid_ranges_assigned}")
+    if users_with_phone:
+        print("\nPrimeros 5 documentos con teléfono:")
+        for i, user in enumerate(users_with_phone[:5], 1):
+            print(f"{i}. {user}")
+
+    if users_with_phone:
+        save_results(users_with_phone, OUTPUT_PATH)
+    else:
+        print("⚠️ No se encontraron documentos con teléfono")
+
+
 if __name__ == "__main__":
-    users_list = find_users_with_phone()
-    
-    # Ejemplo de cómo ver el contenido de la nueva lista
-    if users_list:
-        print("\nPrimeros 5 documentos con phone number:")
-        # Imprimir los primeros 5 elementos de la lista para verificación
-        for i, user in enumerate(users_list[:5]):
-            print(f"{i+1}. Documento: {user}")
-            
-        # Opcional: Guardar esta nueva lista en un archivo JSON
-        with open('good_users.json', 'w', encoding='utf-8') as outfile:
-            json.dump(users_list, outfile, ensure_ascii=False, indent=4)
-        print(f"\nLista de {len(users_list)} documentos sin nombre guardada en 'good_users.json'")
+    main()
